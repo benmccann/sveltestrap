@@ -1,6 +1,13 @@
 <script>
+  import {
+    autoUpdate,
+    computePosition,
+    flip,
+    limitShift,
+    offset,
+    shift
+  } from '@floating-ui/dom';
   import { onMount } from 'svelte';
-  import { createPopper } from '@popperjs/core';
   import classnames from './utils';
   import InlineContainer from './InlineContainer.svelte';
   import Portal from './Portal.svelte';
@@ -16,40 +23,34 @@
   export let target = '';
   export let title = '';
   export let trigger = 'click';
-  let targetEl;
-  let popoverEl;
-  let popperInstance;
+  let referenceEl;
+  let floatingEl;
   let bsPlacement;
   let popperPlacement = placement;
-
-  const checkPopperPlacement = {
-    name: 'checkPopperPlacement',
-    enabled: true,
-    phase: 'main',
-    fn({ state }) {
-      popperPlacement = state.placement;
-    }
-  };
+  let cleanup;
 
   $: {
-    if (isOpen && popoverEl) {
-      popperInstance = createPopper(targetEl, popoverEl, {
-        placement,
-        modifiers: [
-          checkPopperPlacement,
-          {
-            name: 'offset',
-            options: {
-              offset: () => {
-                return [0, 8];
-              }
-            }
-          }
-        ]
+    if (isOpen && floatingEl) {
+      cleanup = autoUpdate(referenceEl, floatingEl, () => {
+        floatingEl.style = {
+          width: 'max-content',
+          position: 'absolute',
+          top: 0,
+          left: 0
+        };
+        computePosition(referenceEl, floatingEl, {
+          placement: popperPlacement,
+          middleware: [offset(8), flip(), shift({ limiter: limitShift() })],
+        }).then(({x, y}) => {
+          Object.assign(floatingEl.style, {
+            left: `${x}px`,
+            top: `${y}px`,
+          });
+        })
       });
-    } else if (popperInstance) {
-      popperInstance.destroy();
-      popperInstance = undefined;
+    } else if (cleanup) {
+      cleanup();
+      cleanup = undefined;
     }
   }
 
@@ -58,34 +59,34 @@
   const toggle = () => (isOpen = !isOpen);
 
   onMount(() => {
-    targetEl = document.querySelector(`#${target}`);
+    referenceEl = document.querySelector(`#${target}`);
     switch (trigger) {
       case 'hover':
-        targetEl.addEventListener('mouseover', open);
-        targetEl.addEventListener('mouseleave', close);
+        referenceEl.addEventListener('mouseover', open);
+        referenceEl.addEventListener('mouseleave', close);
         break;
       case 'focus':
-        targetEl.addEventListener('focus', open);
-        targetEl.addEventListener('blur', close);
+        referenceEl.addEventListener('focus', open);
+        referenceEl.addEventListener('blur', close);
         break;
       default:
-        targetEl.addEventListener('click', toggle);
-        if (dismissible) targetEl.addEventListener('blur', close);
+        referenceEl.addEventListener('click', toggle);
+        if (dismissible) referenceEl.addEventListener('blur', close);
         break;
     }
     return () => {
       switch (trigger) {
         case 'hover':
-          targetEl.removeEventListener('mouseover', open);
-          targetEl.removeEventListener('mouseleave', close);
+          referenceEl.removeEventListener('mouseover', open);
+          referenceEl.removeEventListener('mouseleave', close);
           break;
         case 'focus':
-          targetEl.removeEventListener('focus', open);
-          targetEl.removeEventListener('blur', close);
+          referenceEl.removeEventListener('focus', open);
+          referenceEl.removeEventListener('blur', close);
           break;
         default:
-          targetEl.removeEventListener('click', toggle);
-          if (dismissible) targetEl.removeEventListener('blur', close);
+          referenceEl.removeEventListener('click', toggle);
+          if (dismissible) referenceEl.removeEventListener('blur', close);
           break;
       }
     };
@@ -115,7 +116,7 @@
 {#if isOpen}
   <svelte:component this={outer}>
     <div
-      bind:this={popoverEl}
+      bind:this={floatingEl}
       {...$$restProps}
       class={classes}
       role="tooltip"

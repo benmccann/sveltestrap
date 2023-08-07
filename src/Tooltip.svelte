@@ -1,6 +1,12 @@
 <script>
+  import {
+    autoUpdate,
+    computePosition,
+    flip,
+    limitShift,
+    shift
+  } from '@floating-ui/dom';
   import { onDestroy, onMount } from 'svelte';
-  import { createPopper } from '@popperjs/core/dist/esm/popper';
   import classnames, { uuid } from './utils';
   import InlineContainer from './InlineContainer.svelte';
   import Portal from './Portal.svelte';
@@ -15,29 +21,27 @@
   export let placement = 'top';
   export let target = '';
   let bsPlacement;
-  let popperInstance;
   let popperPlacement = placement;
-  let targetEl;
-  let tooltipEl;
-
-  const checkPopperPlacement = {
-    name: 'checkPopperPlacement',
-    enabled: true,
-    phase: 'main',
-    fn({ state }) {
-      popperPlacement = state.placement;
-    }
-  };
+  let referenceEl;
+  let floatingEl;
+  let cleanup;
 
   $: {
-    if (isOpen && tooltipEl) {
-      popperInstance = createPopper(targetEl, tooltipEl, {
-        placement,
-        modifiers: [checkPopperPlacement]
+    if (isOpen && floatingEl) {
+      cleanup = autoUpdate(referenceEl, floatingEl, () => {
+        computePosition(referenceEl, floatingEl, {
+          placement: popperPlacement,
+          middleware: [flip(), shift({ limiter: limitShift() })],
+        }).then(({x, y}) => {
+          Object.assign(floatingEl.style, {
+            left: `${x}px`,
+            top: `${y}px`,
+          });
+        })
       });
-    } else if (popperInstance) {
-      popperInstance.destroy();
-      popperInstance = undefined;
+    } else if (cleanup) {
+      cleanup();
+      cleanup = undefined;
     }
   }
 
@@ -54,51 +58,51 @@
 
   function registerEventListeners() {
     if (target == null || target.length == 0) {
-      targetEl = null;
+      referenceEl = null;
       return;
     }
 
     // Check if target is HTMLElement
     try {
       if (target instanceof HTMLElement) {
-        targetEl = target;
+        referenceEl = target;
       }
     } catch (e) {
       // fails on SSR
     }
 
-    // If targetEl has not been found yet
-    if (targetEl == null) {
+    // If referenceEl has not been found yet
+    if (referenceEl == null) {
       // Check if target can be found via querySelector
       try {
-        targetEl = document.querySelector(`#${target}`);
+        referenceEl = document.querySelector(`#${target}`);
       } catch (e) {
         // fails on SSR
       }
     }
 
-    // If we've found targetEl
-    if (targetEl) {
-      targetEl.addEventListener('mouseover', open);
-      targetEl.addEventListener('mouseleave', close);
-      targetEl.addEventListener('focus', open);
-      targetEl.addEventListener('blur', close);
+    // If we've found referenceEl
+    if (referenceEl) {
+      referenceEl.addEventListener('mouseover', open);
+      referenceEl.addEventListener('mouseleave', close);
+      referenceEl.addEventListener('focus', open);
+      referenceEl.addEventListener('blur', close);
     }
   }
 
   function unregisterEventListeners() {
-    if (targetEl) {
-      targetEl.removeEventListener('mouseover', open);
-      targetEl.removeEventListener('mouseleave', close);
-      targetEl.removeEventListener('focus', open);
-      targetEl.removeEventListener('blur', close);
-      targetEl.removeAttribute('aria-describedby');
+    if (referenceEl) {
+      referenceEl.removeEventListener('mouseover', open);
+      referenceEl.removeEventListener('mouseleave', close);
+      referenceEl.removeEventListener('focus', open);
+      referenceEl.removeEventListener('blur', close);
+      referenceEl.removeAttribute('aria-describedby');
     }
   }
 
-  $: if (targetEl) {
-    if (isOpen) targetEl.setAttribute('aria-describedby', id);
-    else targetEl.removeAttribute('aria-describedby');
+  $: if (referenceEl) {
+    if (isOpen) referenceEl.setAttribute('aria-describedby', id);
+    else referenceEl.removeAttribute('aria-describedby');
   }
 
   $: {
@@ -121,7 +125,7 @@
 {#if isOpen}
   <svelte:component this={outer}>
     <div
-      bind:this={tooltipEl}
+      bind:this={floatingEl}
       {...$$restProps}
       class={classes}
       {id}
@@ -139,3 +143,12 @@
     </div>
   </svelte:component>
 {/if}
+
+<style>
+  :global(.floating) {
+    width: max-content;
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+</style>
